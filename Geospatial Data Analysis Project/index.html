@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <title>Cesium Filter & Stats GUI</title>
+    <script src="Cesium/Cesium.js"></script>
+    <script src="plotly.js"></script>
+    <link href="Cesium/Widgets/widgets.css" rel="stylesheet" />
+    <style>
+        html,
+        body {
+            margin: 0;
+            padding: 0;
+            width: 100%;
+            height: 100vh;
+            overflow: hidden;
+            font-family: sans-serif;
+            font-size: 14px;
+        }
+
+        #wrapper {
+            display: flex;
+            height: 100%;
+        }
+
+        /* common row in filter panel */
+        .filterRow {
+            display: flex;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .filterRow label {
+            flex: 0 0 120px;
+            margin-right: 8px;
+        }
+
+        .filterRow input[type="text"],
+        .filterRow input[type="range"] {
+            flex: 1;
+        }
+
+        /* invalid input */
+        .invalid {
+            border: 1px solid red !important;
+            outline: none;
+        }
+
+        /* protocol bubbles */
+        .bubble-group {
+            display: flex;
+            gap: 12px;
+            flex-wrap: wrap;
+        }
+
+        .bubble-container {
+            display: flex;
+            align-items: center;
+            cursor: pointer;
+            user-select: none;
+        }
+
+        .bubble-container input {
+            display: none;
+        }
+
+        .bubble-indicator {
+            width: 12px;
+            height: 12px;
+            border: 1px solid #ccc;
+            border-radius: 50%;
+            margin-right: 4px;
+            transition: background 0.2s, border-color 0.2s;
+        }
+
+        .bubble-container input:checked+.bubble-indicator {
+            background: #007AFF;
+            border-color: #007AFF;
+        }
+
+        .bubble-text {
+            line-height: 1;
+        }
+
+        /* Filter Panel */
+        #filterPanel {
+            flex: 0 0 300px;
+            min-width: 200px;
+            max-width: 50%;
+            height: 100%;
+            overflow-y: auto;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 10px;
+        }
+
+        /* Vertical splitter */
+        #splitter {
+            width: 5px;
+            background: rgba(0, 0, 0, 0.1);
+            cursor: col-resize;
+        }
+
+        /* Right side */
+        #rightPanel {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        #geoHeader {
+            padding: 8px 12px;
+            background: rgba(255, 255, 255, 0.8);
+            font-size: 18px;
+            border-bottom: 1px solid #ccc;
+        }
+
+        #cesiumContainer {
+            flex: 1;
+            min-height: 0;
+        }
+
+        /* Horizontal splitter */
+        #rightSplitter {
+            height: 5px;
+            background: rgba(0, 0, 0, 0.1);
+            cursor: row-resize;
+        }
+
+        /* Stats Panel */
+        #statsPanel {
+            flex: none;
+            height: 150px;
+            background: rgba(255, 255, 255, 0.95);
+            padding: 10px;
+            border-top: 1px solid #ccc;
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            overflow: hidden;
+        }
+
+        #statsPanel h2 {
+            margin: 0;
+            font-size: 16px;
+            flex: 0;
+        }
+
+        #statsPanel canvas {
+            width: 100% !important;
+            height: 100% !important;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="wrapper">
+        <div id="filterPanel">
+
+            <div class="filterRow">
+                <label>IP Protocol:</label>
+                <div class="bubble-group" id="protocolBubbles">
+                    <label class="bubble-container">
+                        <input type="radio" name="protocol" value="All" checked>
+                        <span class="bubble-indicator"></span>
+                        <span class="bubble-text">All</span>
+                    </label>
+                    <label class="bubble-container">
+                        <input type="radio" name="protocol" value="TCP">
+                        <span class="bubble-indicator"></span>
+                        <span class="bubble-text">TCP</span>
+                    </label>
+                    <label class="bubble-container">
+                        <input type="radio" name="protocol" value="UDP">
+                        <span class="bubble-indicator"></span>
+                        <span class="bubble-text">UDP</span>
+                    </label>
+                    <label class="bubble-container">
+                        <input type="radio" name="protocol" value="ICMP">
+                        <span class="bubble-indicator"></span>
+                        <span class="bubble-text">ICMP</span>
+                    </label>
+                    <label class="bubble-container">
+                        <input type="radio" name="protocol" value="Other">
+                        <span class="bubble-indicator"></span>
+                        <span class="bubble-text">Other</span>
+                    </label>
+                </div>
+            </div>
+
+            <div class="filterRow">
+                <label for="ipInput">IP:</label>
+                <input type="text" id="ipInput" placeholder="e.g. 204.102.229.134">
+            </div>
+
+            <div class="filterRow">
+                <label for="ipInput2">Additional IP:</label>
+                <input type="text" id="ipInput2" placeholder="e.g. 142.251.214.131">
+            </div>
+
+            <div class="filterRow">
+                <label for="anomalySlider">Anomaly Score:</label>
+                <input type="range" id="anomalySlider" min="0" max="1" step="0.01" value="0.0">
+                <span id="anomalyVal" style="width:3em; text-align:center;">0.00</span>
+            </div>
+
+            <div class="filterRow">
+                <label for="beaconMin">Beacon Min:</label>
+                <input type="range" id="beaconMin" min="0" max="10" step="1" value="0">
+            </div>
+
+            <div class="filterRow">
+                <label for="beaconMax">Beacon Max:</label>
+                <input type="range" id="beaconMax" min="0" max="10" step="1" value="10">
+            </div>
+
+            <div class="filterRow">
+                <label for="beaconCount">Beacon Count:</label>
+                <input type="range" id="beaconCount" min="0" max="100" step="1" value="0">
+            </div>
+
+            <div class="filterRow">
+                <button id="resetBtn">Reset Filters</button>
+            </div>
+        </div>
+
+        <div id="splitter"></div>
+
+        <div id="rightPanel">
+            <div id="cesiumContainer"></div>
+            <div id="rightSplitter"></div>
+            <div id="statsPanel">
+                <div id="statsChartWrapper" style="flex:1; min-height:0;">
+                    <div id="statsChart" style="width:100%; height:100%;"></div>
+                </div>
+
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // Vertical splitter
+        (function () {
+            const splitter = document.getElementById('splitter');
+            const panel = document.getElementById('filterPanel');
+            let dragging = false;
+            splitter.addEventListener('mousedown', () => dragging = true);
+            document.addEventListener('mouseup', () => dragging = false);
+            document.addEventListener('mousemove', e => {
+                if (!dragging) return;
+                let w = e.clientX;
+                const min = parseInt(getComputedStyle(panel).minWidth, 10);
+                const max = window.innerWidth * 0.5;
+                w = Math.max(min, Math.min(max, w));
+                panel.style.flexBasis = w + 'px';
+                panel.style.width = w + 'px';
+
+                Plotly.Plots.resize(document.getElementById('statsChart'));
+            });
+        })();
+
+        // Horizontal splitter
+        (function () {
+            const splitter = document.getElementById('rightSplitter');
+            const rightPanel = document.getElementById('rightPanel');
+            const stats = document.getElementById('statsPanel');
+            let dragging = false;
+            splitter.addEventListener('mousedown', () => dragging = true);
+            document.addEventListener('mouseup', () => dragging = false);
+            document.addEventListener('mousemove', e => {
+                if (!dragging) return;
+                const rect = rightPanel.getBoundingClientRect();
+                let h = rect.bottom - e.clientY;
+                const minH = 50, maxH = rect.height * 0.5;
+                h = Math.max(minH, Math.min(maxH, h));
+                stats.style.height = h + 'px';
+
+                Plotly.Plots.resize(document.getElementById('statsChart'));
+            });
+        })();
+
+        // Initialize Cesium (GUI-only)
+        const viewer = new Cesium.Viewer('cesiumContainer', {
+            imageryProvider: new Cesium.TileMapServiceImageryProvider({
+                url: Cesium.buildModuleUrl('Assets/Textures/NaturalEarthII')
+            }),
+            baseLayerPicker: true,
+            geocoder: true,
+            terrainProvider: new Cesium.EllipsoidTerrainProvider()
+        });
+
+        // timing fetch wrapper
+        async function fetchWithTiming(url, options) {
+            const start = performance.now();
+            const response = await fetch(url, options);
+            const headersReceived = performance.now();
+            const networkTime = headersReceived - start;
+
+            if (!response.ok) {
+                const errTime = (performance.now() - start).toFixed(2);
+                console.error(`Fetch to ${url} failed after ${errTime}ms with status ${response.status}`);
+                throw new Error(`Server error: ${response.status}`);
+            }
+
+            let data;
+            try {
+                data = await response.json();
+            } catch (e) {
+                const parseFailTime = (performance.now() - start).toFixed(2);
+                console.error(`Failed to parse JSON from ${url} after ${parseFailTime}ms`, e);
+                throw e;
+            }
+            const totalTime = performance.now() - start;
+
+            console.log(
+                `Fetch to ${url} — network (headers): ${networkTime.toFixed(2)}ms, total (including JSON): ${totalTime.toFixed(2)}ms`
+            );
+
+            return data;
+        }
+
+        // helper: gather current filter values into an object
+        function getFilterDict() {
+            return {
+                ip_protocol: document.querySelector('#protocolBubbles input:checked').value,
+                ip: document.getElementById('ipInput').value,
+                additional_ip: document.getElementById('ipInput2').value,
+                anomaly_score: parseFloat(document.getElementById('anomalySlider').value),
+                beaconMin: parseInt(document.getElementById('beaconMin').value, 10),
+                beaconMax: parseInt(document.getElementById('beaconMax').value, 10),
+                beaconCount: parseInt(document.getElementById('beaconCount').value, 10)
+            };
+        }
+
+        // call your endpoint and return parsed JSON
+        function filtered_data(filtered_dict) {
+            return fetchWithTiming('http://127.0.0.1:5000/filtered_data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(filtered_dict)
+            });
+        }
+
+        // remove all existing entities and draw new ones
+        function drawData(data) {
+            viewer.entities.removeAll();
+            drawNodes(data.nodes);
+            drawEdges(data.edges);
+            drawStats(data.statistics);
+        }
+
+        function drawStats(stats) {
+            let x;
+            if (typeof stats.start_timestamp !== 'undefined' && typeof stats.period !== 'undefined') {
+                let startMs = stats.start_timestamp;
+                if (startMs < 1e12) startMs = startMs * 1000;
+                const periodMs = stats.period * 1000;
+                x = stats.flow_counts.map((_, i) => new Date(startMs + i * periodMs));
+            } else {
+                x = stats.flow_counts.map((_, i) => i + 1);
+            }
+
+            const trace1 = {
+                x,
+                y: stats.flow_counts,
+                name: 'Flow Counts',
+                mode: 'lines+markers',
+                marker: { size: 6, symbol: 'circle', line: { width: 1 }, opacity: 0.9 },
+                yaxis: 'y1',
+                hovertemplate: '%{y}<br>%{x|%b %d, %Y %H:%M}<extra></extra>'
+            };
+            const trace2 = {
+                x,
+                y: stats.anomaly_scores,
+                name: 'Score',
+                mode: 'lines+markers',
+                marker: { size: 6, symbol: 'circle', line: { width: 1 }, opacity: 0.9 },
+                yaxis: 'y2',
+                hovertemplate: '%{y:.3f}<br>%{x|%b %d, %Y %H:%M}<extra></extra>'
+            };
+
+            const layout = {
+                autosize: true,
+                margin: { l: 40, r: 40, t: 20, b: 40 },
+                xaxis: {
+                    title: 'Time',
+                    type: 'date',
+                    tickformat: '%b %d, %Y %H:%M',
+                    tickangle: -45,
+                    automargin: true,
+                    tickfont: { size: 10 }
+                },
+                yaxis: { title: 'Flow Counts', side: 'left' },
+                yaxis2: {
+                    title: 'Score',
+                    overlaying: 'y',
+                    side: 'right'
+                },
+                legend: {
+                    x: 1.2,
+                    xanchor: 'left',
+                    y: 1,
+                    orientation: 'v'
+                },
+                hovermode: 'closest'
+            };
+
+            Plotly.react('statsChart', [trace1, trace2], layout, { responsive: true });
+        }
+
+        function drawNodes(nodes) {
+            nodes.forEach(([lat, lon, count, score]) => {
+                let size;
+                if (count === 1) {
+                    size = 10;
+                } else if (count <= 4) {
+                    size = 12;
+                } else if (count <= 9) {
+                    size = 15;
+                } else if (count <= 99) {
+                    size = 20;
+                } else {
+                    size = 25;
+                }
+                const color = Cesium.Color.lerp(
+                    Cesium.Color.BLUE,
+                    Cesium.Color.RED,
+                    Math.min(Math.max(score / 1, 0), 1),
+                    new Cesium.Color()
+                );
+                viewer.entities.add({
+                    name: `Node at ${lat},${lon}`,
+                    id: `${lat.toFixed(6)},${lon.toFixed(6)}`,
+                    position: Cesium.Cartesian3.fromDegrees(lon, lat),
+                    point: {
+                        pixelSize: size,
+                        color: color
+                    },
+                });
+            });
+        }
+
+        function drawEdges(edges) {
+            console.log(edges)
+            edges.forEach(([lat1, lon1, lat2, lon2, count, score]) => {
+                let lineWidth;
+                if (count === 1) {
+                    lineWidth = 1;
+                } else if (count <= 4) {
+                    lineWidth = 2;
+                } else if (count <= 9) {
+                    lineWidth = 3;
+                } else if (count <= 99) {
+                    lineWidth = 4;
+                } else {
+                    lineWidth = 5;
+                }
+                const color = Cesium.Color.lerp(
+                    Cesium.Color.BLUE,
+                    Cesium.Color.RED,
+                    Math.min(Math.max(score / 1, 0), 1),
+                    new Cesium.Color()
+                );
+                const [aLat,aLon,bLat,bLon] = 
+                (lat1 < lat2 || (lat1 === lat2 && lon1 <= lon2))
+                  ? [lat1,lon1,lat2,lon2]
+                  : [lat2,lon2,lat1,lon1];
+                viewer.entities.add({
+                    name: `Edge from ${lat1},${lon1} to ${lat2},${lon2}`,
+                    id: `${aLat.toFixed(6)},${aLon.toFixed(6)}|${bLat.toFixed(6)},${bLon.toFixed(6)}`,
+                    polyline: {
+                        positions: Cesium.Cartesian3.fromDegreesArray([lon1, lat1, lon2, lat2]),
+                        width: lineWidth,
+                        material: color
+                    },
+                });
+            });
+        }
+
+        // selected_data helper
+        function selected_data(lat1, lon1, lat2, lon2, filterDict) {
+            return fetchWithTiming('http://127.0.0.1:5000/selected_data', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify([
+                    lat1, lon1, lat2, lon2, filterDict
+                ])
+            });
+        }
+
+        // IP validation helpers
+        function isValidIPv6(ip) {
+            if (!ip) return true;
+            try {
+                // Wrap in brackets to let URL parse IPv6; this will throw if invalid
+                new URL('http://[' + ip + ']');
+                return true;
+            } catch (e) {
+                return false;
+            }
+        }
+
+        function isValidIP(ip) {
+            if (!ip) return true;
+            const ipv4 = /^(25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)(\.(25[0-5]|2[0-4]\d|1\d{2}|[1-9]?\d)){3}$/;
+            if (ipv4.test(ip.trim())) return true;
+            if (isValidIPv6(ip.trim())) return true;
+            return false;
+        }
+
+        // Core updater: validate IPs then fetch & redraw
+        function validateAndDraw() {
+            const ip1 = document.getElementById('ipInput').value.trim();
+            const ip2 = document.getElementById('ipInput2').value.trim();
+            const ipEl1 = document.getElementById('ipInput');
+            const ipEl2 = document.getElementById('ipInput2');
+            const valid1 = isValidIP(ip1);
+            const valid2 = isValidIP(ip2);
+
+            if (!valid1) {
+                ipEl1.classList.add('invalid');
+            } else {
+                ipEl1.classList.remove('invalid');
+            }
+            if (!valid2) {
+                ipEl2.classList.add('invalid');
+            } else {
+                ipEl2.classList.remove('invalid');
+            }
+
+            if (!valid1 || !valid2) {
+                console.warn('Invalid IP input; skipping server update.'); 
+                return;
+            }
+
+            const filters = getFilterDict();
+            filtered_data(filters).then(drawData).catch(err => console.error("Error in filtered_data:", err));
+        }
+
+        // hook filters with desired event semantics
+        function hookFilter(fn) {
+            // text inputs: immediate (with validation)
+            ['ipInput', 'ipInput2'].forEach(id =>
+                document.getElementById(id).addEventListener('input', fn)
+            );
+
+            // protocol: on change
+            document.querySelectorAll('#protocolBubbles input').forEach(el =>
+                el.addEventListener('change', fn)
+            );
+
+            // sliders: immediate visual-clear on input, server call on change
+            ['anomalySlider', 'beaconMin', 'beaconMax', 'beaconCount'].forEach(id => {
+                const el = document.getElementById(id);
+                el.addEventListener('input', () => {
+                    viewer.entities.removeAll(); // live clear while dragging
+                });
+                el.addEventListener('pointerup', fn);
+            });
+
+            // anomaly display update live
+            document.getElementById('anomalySlider').addEventListener('input', e => {
+                document.getElementById('anomalyVal').textContent = parseFloat(e.target.value).toFixed(2);
+            });
+
+            // reset button
+            document.getElementById('resetBtn').addEventListener('click', () => {
+                document.querySelector('#protocolBubbles input[value="All"]').checked = true;
+                document.getElementById('ipInput').value = '';
+                document.getElementById('ipInput2').value = '';
+                document.getElementById('anomalySlider').value = 0.0;
+                document.getElementById('anomalyVal').textContent = '1.00';
+                document.getElementById('beaconMin').value = 0;
+                document.getElementById('beaconMax').value = 10;
+                document.getElementById('beaconCount').value = 0;
+                fn();
+            });
+        }
+
+        // initial bind and draw (using validation-aware updater)
+        hookFilter(validateAndDraw);
+        validateAndDraw();
+
+        // click handler for selection
+        const clickHandler = new Cesium.ScreenSpaceEventHandler(viewer.scene.canvas);
+        clickHandler.setInputAction(evt => {
+            const pickedObj = viewer.scene.pick(evt.position);
+            if (!Cesium.defined(pickedObj) || !pickedObj.id) return;
+          
+            const entity = pickedObj.id;
+            let key = String(entity.id);
+          
+            let lat1, lon1, lat2, lon2;
+            if (key.includes('|')) {
+              [[lat1, lon1], [lat2, lon2]] = key
+                .split('|')
+                .map(pair => pair.split(',').map(Number));
+            } else {
+              [lat1, lon1] = key.split(',').map(Number);
+              lat2 = lon2 = -1;
+            }
+          
+            const filters = getFilterDict();
+            selected_data(lat1, lon1, lat2, lon2, filters)
+              .then(rows => {
+                if (!Array.isArray(rows)) {
+                  console.error("Expected array but got:", rows);
+                  return;
+                }
+                let html = `
+                  <table class="cesium-infoBox-defaultTable">
+                    <tr><th>From IP</th><th>To IP</th><th>Count</th><th>Score</th></tr>
+                `;
+                rows.forEach(({ from_ip, to_ip, count, anomaly_score }) => {
+                  html += `
+                    <tr>
+                      <td>${from_ip}</td>
+                      <td>${to_ip}</td>
+                      <td>${count}</td>
+                      <td>${anomaly_score.toFixed(3)}</td>
+                    </tr>
+                  `;
+                });
+                html += `</table>`;
+          
+                entity.description = html;
+                viewer.selectedEntity = entity;
+              })
+              .catch(err => console.error("Error in selected_data:", err));
+          }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
+          
+          
+    </script>
+
+</body>
+
+</html>
