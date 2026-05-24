@@ -1,9 +1,9 @@
 HOW TO RUN THIS CODE:
-1. Put the npy data file in Server/Data
+1. Put the parquet data files in Server/Data
 2. Navigate to the current directory in terminal
 3. Run this command in the terminal: python3 Server/server.py 
 4. Run this command in the terminal in a different terminal: python3 -m http.server 8000
-5. Navigate to this url in a browser: http://localhost:8000/index.html
+5. Navigate to this url in a browser: http://127.0.0.1:8000/
 6. Close the terminal or terminate the process to stop the server
 
 INSTRUCTIONS:<br>
