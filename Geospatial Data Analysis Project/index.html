@@ -281,6 +281,9 @@
         })();
 
         // Initialize Cesium (GUI-only)
+        (async () => {
+        const token = await fetch('token.txt').then(r => r.text());
+        Cesium.Ion.defaultAccessToken = token.trim();
         const viewer = new Cesium.Viewer('cesiumContainer', {
             imageryProvider: new Cesium.TileMapServiceImageryProvider({
                 url: Cesium.buildModuleUrl('Assets/Textures/NaturalEarthII')
@@ -629,8 +632,7 @@
               })
               .catch(err => console.error("Error in selected_data:", err));
           }, Cesium.ScreenSpaceEventType.LEFT_CLICK);
-          
-          
+        })();
     </script>
 
 </body>
